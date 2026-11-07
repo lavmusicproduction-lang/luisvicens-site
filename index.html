@@ -460,37 +460,31 @@ $('#chips').innerHTML = SERVICES.map(s => `<button type="button" class="chip" ar
 $('#chips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return;
   const s = b.dataset.s; picked.has(s) ? picked.delete(s) : picked.add(s); b.setAttribute('aria-pressed', picked.has(s)); });
 const form = $('#bookForm'), statusEl = $('#formStatus'), sendBtn = $('#sendBtn');
-// Plain form post to FormSubmit (no background request, so nothing can block it).
-// FormSubmit emails the request to Luis, then sends the visitor back here with ?sent=1.
-form.action = 'https://formsubmit.co/' + BOOKING_EMAIL;
+// Booking form → Formspree (emails Luis at lav.musicproduction@gmail.com)
+const FORM_ENDPOINT = 'https://formspree.io/f/mjyydypk';
+form.action = FORM_ENDPOINT;
 form.method = 'POST';
-function hidden(name, value) {
-  let el = form.querySelector('input[type=hidden][name="' + name + '"]');
-  if (!el) { el = document.createElement('input'); el.type = 'hidden'; el.name = name; form.appendChild(el); }
-  el.value = value;
-}
-form.addEventListener('submit', e => {
-  const f = Object.fromEntries(new FormData(form).entries());
-  if (f._honey) { e.preventDefault(); return; }
-  if (!f.name.trim() || !/^\S+@\S+\.\S+$/.test(f.email.trim())) {
-    e.preventDefault(); statusEl.textContent = 'Please add your name and a valid email.'; statusEl.style.color = '#B3261E'; return;
-  }
-  hidden('services', [...picked].join(', ') || 'Not specified');
-  hidden('_subject', 'New project inquiry — ' + (f.artist || f.name));
-  hidden('_replyto', f.email);
-  hidden('_template', 'table');
-  hidden('_captcha', 'false');
-  hidden('_next', location.origin + '/?sent=1');
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const fd = new FormData(form);
+  if (fd.get('_honey')) return;
+  const name = (fd.get('name') || '').trim(), email = (fd.get('email') || '').trim();
+  if (!name || !/^\S+@\S+\.\S+$/.test(email)) { statusEl.textContent = 'Please add your name and a valid email.'; statusEl.style.color = '#B3261E'; return; }
+  fd.delete('_honey');
+  fd.set('services', [...picked].join(', ') || 'Not specified');
+  fd.set('_subject', 'New project inquiry — ' + ((fd.get('artist') || '').trim() || name));
+  fd.set('_replyto', email);
   statusEl.style.color = ''; statusEl.textContent = 'Sending…'; sendBtn.disabled = true;
+  try {
+    const r = await fetch(FORM_ENDPOINT, { method: 'POST', body: fd, headers: { Accept: 'application/json' } });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error((j.errors && j.errors.map(x => x.message).join(', ')) || 'failed'); }
+    form.reset(); picked.clear(); document.querySelectorAll('.chip').forEach(c => c.setAttribute('aria-pressed', 'false'));
+    statusEl.textContent = 'Thanks! Your request is on its way — I’ll be in touch soon.'; statusEl.style.color = '#1E7B34';
+  } catch (err) {
+    statusEl.innerHTML = 'Couldn’t send just now. <a href="mailto:' + BOOKING_EMAIL + '?subject=' + encodeURIComponent('Project inquiry — ' + name) + '">Email me instead</a>.';
+    statusEl.style.color = '#B3261E';
+  } finally { sendBtn.disabled = false; }
 });
-// Back from FormSubmit: open the site at the form and say thanks
-if (new URLSearchParams(location.search).get('sent') === '1') {
-  landing.hidden = true; site.hidden = false; document.body.classList.remove('locked');
-  statusEl.textContent = 'Thanks! Your request is on its way — I’ll be in touch soon.';
-  statusEl.style.color = '#1E7B34';
-  history.replaceState(null, '', location.pathname + '#contact');
-  setTimeout(() => document.getElementById('contact').scrollIntoView(), 50);
-}
 </script>
 </body>
 </html>
